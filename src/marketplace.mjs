@@ -1,9 +1,10 @@
 import { mkdirSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 import { fail } from "./errors.mjs";
 import {
   atomicWrite,
+  assertRealPathWithin,
   makeTempDir,
   pathExists,
   readJson,
@@ -11,6 +12,7 @@ import {
   replaceDirectory,
   runGit,
   safeRelative,
+  sha256,
   sha256File,
 } from "./io.mjs";
 import { marketplaceCachePath } from "./config.mjs";
@@ -19,17 +21,7 @@ const MARKETPLACE_FILE = join(".claude-plugin", "marketplace.json");
 const NAME_PATTERN = /^[A-Za-z0-9][-A-Za-z0-9._]*$/;
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
-export function parseMarketplaceSource(input, cwd = process.cwd()) {
-  if (typeof input !== "string" || input.trim() === "") {
-    fail("Marketplace source is required");
-  }
-  const value = input.trim();
-  const local = resolve(cwd, value);
-  if (pathExists(local)) {
-    const root = realpathOrNull(local);
-    if (!root) fail(`Cannot resolve local Marketplace: ${value}`);
-    return { type: "local", path: root };
-  }
+function parseRemoteMarketplaceSource(value) {
   const github = value.match(
     /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:@([^/].*))?$/,
   );
@@ -46,7 +38,65 @@ export function parseMarketplaceSource(input, cwd = process.cwd()) {
     }
     return { type: "git", url: value };
   }
+  return null;
+}
+
+export function parseMarketplaceSource(input, cwd = process.cwd()) {
+  if (typeof input !== "string" || input.trim() === "") {
+    fail("Marketplace source is required");
+  }
+  const value = input.trim();
+  const local = resolve(cwd, value);
+  if (pathExists(local)) {
+    const root = realpathOrNull(local);
+    if (!root) fail(`Cannot resolve local Marketplace: ${value}`);
+    return { type: "local", path: root };
+  }
+  const remote = parseRemoteMarketplaceSource(value);
+  if (remote) return remote;
   fail(`Unsupported Marketplace source: ${value}`);
+}
+
+export function parseProjectMarketplaceSource(input, projectRoot) {
+  if (typeof input !== "string" || input.trim() === "") {
+    fail("Project Marketplace source is required");
+  }
+  const value = input.trim();
+  const looksLocal = value === "." || value.startsWith("./") ||
+    value.startsWith("../") || isAbsolute(value);
+  if (looksLocal) {
+    if (isAbsolute(value)) {
+      fail("Project Marketplace local source must be relative to the project");
+    }
+    const candidate = safeRelative(
+      projectRoot,
+      value,
+      "Project Marketplace source",
+    );
+    if (!pathExists(candidate)) {
+      fail(`Project Marketplace source does not exist: ${value}`);
+    }
+    const path = assertRealPathWithin(
+      projectRoot,
+      candidate,
+      "Project Marketplace source",
+    );
+    return {
+      materialization: { type: "local", path },
+      lockSource: { type: "project-local", path: value },
+    };
+  }
+  if (value.startsWith("file://")) {
+    fail("Project Marketplace file URL is not portable; use a ./ relative path");
+  }
+  const remote = parseRemoteMarketplaceSource(value);
+  if (!remote) fail(`Unsupported project Marketplace source: ${value}`);
+  return { materialization: remote, lockSource: remote };
+}
+
+export function validateMarketplaceName(name, label = "Marketplace name") {
+  if (!NAME_PATTERN.test(name ?? "")) fail(`${label} is invalid: ${name}`);
+  return name;
 }
 
 function validateOwner(owner, label) {
@@ -92,9 +142,7 @@ function validateSourceObject(source, label) {
 }
 
 export function validateMarketplace(manifest, label = "Marketplace") {
-  if (!NAME_PATTERN.test(manifest?.name ?? "")) {
-    fail(`${label} requires a valid name`);
-  }
+  validateMarketplaceName(manifest?.name, `${label} name`);
   validateOwner(manifest.owner, label);
   if (!Array.isArray(manifest.plugins)) fail(`${label} requires plugins[]`);
 
@@ -170,6 +218,45 @@ async function downloadMarketplaceJson(source, destination) {
   return sha256File(path);
 }
 
+function cacheDestination(paths, name, revision, digest, namespace) {
+  if (!namespace) {
+    return { root: marketplaceCachePath(paths, name), path: name };
+  }
+  const key = sha256(JSON.stringify({ name, revision, digest })).slice(0, 24);
+  const path = `${namespace}/${name}/${key}`;
+  const root = safeRelative(paths.marketplaceCache, path, "Marketplace cache path", {
+    allowBare: true,
+  });
+  return { root, path };
+}
+
+function cacheLocalMarketplace(source, paths, expectedName, options) {
+  const marketplace = readMarketplace(source.path);
+  if (expectedName && marketplace.manifest.name !== expectedName) {
+    fail(`Marketplace changed name: ${expectedName} -> ${marketplace.manifest.name}`);
+  }
+  const revision = options.cacheNamespace
+    ? marketplace.sha256
+    : gitRevision(source.path) ?? marketplace.sha256;
+  if (!options.cacheNamespace) {
+    return {
+      ...marketplace,
+      source,
+      revision,
+      gitRevision: gitRevision(source.path),
+      cached: false,
+    };
+  }
+
+  return {
+    ...marketplace,
+    source,
+    revision,
+    gitRevision: null,
+    cached: false,
+  };
+}
+
 export async function materializeMarketplace(
   source,
   paths,
@@ -177,17 +264,7 @@ export async function materializeMarketplace(
   options = {},
 ) {
   if (source.type === "local") {
-    const marketplace = readMarketplace(source.path);
-    if (expectedName && marketplace.manifest.name !== expectedName) {
-      fail(`Marketplace changed name: ${expectedName} -> ${marketplace.manifest.name}`);
-    }
-    return {
-      ...marketplace,
-      source,
-      revision: gitRevision(source.path) ?? marketplace.sha256,
-      gitRevision: gitRevision(source.path),
-      cached: false,
-    };
+    return cacheLocalMarketplace(source, paths, expectedName, options);
   }
 
   const temporary = makeTempDir("skillsenv-market-");
@@ -205,14 +282,22 @@ export async function materializeMarketplace(
     if (expectedName && name !== expectedName) {
       fail(`Marketplace changed name: ${expectedName} -> ${name}`);
     }
-    const destination = marketplaceCachePath(paths, name);
-    replaceDirectory(staged, destination);
+    const preview = readMarketplace(staged);
+    const destination = cacheDestination(
+      paths,
+      name,
+      revision,
+      preview.sha256,
+      options.cacheNamespace,
+    );
+    replaceDirectory(staged, destination.root);
     return {
-      ...readMarketplace(destination),
+      ...readMarketplace(destination.root),
       source,
       revision,
       gitRevision: source.type === "remote-json" ? null : revision,
       cached: true,
+      ...(options.cacheNamespace && { cachePath: destination.path }),
     };
   } finally {
     rmSync(temporary, { recursive: true, force: true });
@@ -228,9 +313,21 @@ export function gitRevision(path) {
 }
 
 export function registeredMarketplace(name, registration, paths) {
-  const root = registration.source.type === "local"
-    ? registration.source.path
-    : marketplaceCachePath(paths, name);
+  let root;
+  if (registration.resolved_root) {
+    root = registration.resolved_root;
+  } else if (registration.source.type === "local") {
+    root = registration.source.path;
+  } else if (registration.cache_path) {
+    root = safeRelative(
+      paths.marketplaceCache,
+      registration.cache_path,
+      `Marketplace ${name} cache path`,
+      { allowBare: true },
+    );
+  } else {
+    root = marketplaceCachePath(paths, name);
+  }
   const marketplace = readMarketplace(root);
   if (marketplace.manifest.name !== name) {
     fail(`Registered Marketplace ${name} now declares ${marketplace.manifest.name}`);
@@ -245,11 +342,68 @@ export function registeredMarketplace(name, registration, paths) {
   return { ...marketplace, registration };
 }
 
-export function marketplaceRegistration(materialized) {
+export function marketplaceRegistration(materialized, source = materialized.source) {
   return {
-    source: materialized.source,
+    source,
     revision: materialized.revision,
     git_revision: materialized.gitRevision,
     manifest_sha256: materialized.sha256,
+    ...(materialized.cachePath && { cache_path: materialized.cachePath }),
   };
+}
+
+function referencedMarketplaceNames(manifest) {
+  const dependencies = [
+    ...manifest.value.dependencies,
+    ...Object.values(manifest.value.dependency_groups ?? {}).flat(),
+  ];
+  return new Set(dependencies.map((dependency) =>
+    dependency.plugin.slice(dependency.plugin.lastIndexOf("@") + 1)));
+}
+
+export async function projectMarketplaceConfig(
+  manifest,
+  userConfig,
+  paths,
+  options = {},
+) {
+  const declarations = manifest.value.marketplaces ?? {};
+  const referenced = referencedMarketplaceNames(manifest);
+  const names = Object.keys(declarations).filter((name) => referenced.has(name)).sort();
+  if (!names.length) return { config: userConfig, cleanup() {} };
+
+  const previewRoot = options.persist === false
+    ? makeTempDir("skillsenv-project-markets-")
+    : null;
+  const materializationPaths = previewRoot
+    ? { ...paths, marketplaceCache: join(previewRoot, "marketplaces") }
+    : paths;
+  const marketplaces = { ...userConfig.marketplaces };
+  try {
+    for (const name of names) {
+      const parsed = parseProjectMarketplaceSource(
+        declarations[name].source,
+        manifest.root,
+      );
+      const materialized = await materializeMarketplace(
+        parsed.materialization,
+        materializationPaths,
+        name,
+        { env: options.env, cacheNamespace: "projects" },
+      );
+      marketplaces[name] = {
+        ...marketplaceRegistration(materialized, parsed.lockSource),
+        resolved_root: materialized.root,
+      };
+    }
+    return {
+      config: { ...userConfig, marketplaces },
+      cleanup() {
+        if (previewRoot) rmSync(previewRoot, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    if (previewRoot) rmSync(previewRoot, { recursive: true, force: true });
+    throw error;
+  }
 }

@@ -12,6 +12,8 @@ manager）。它以 Claude Code Plugin Marketplace 为唯一市场输入协议�
 - 支持 Claude Code 的相对路径、`github`、`url`、`git-subdir`、`npm` 五类
   Plugin source。
 - `.skillsenv` 与 `.skillsenv.lock` 管理最近父目录的项目环境。
+- 项目清单可声明 Marketplace 来源，不要求协作者预先登记同名市场。
+- 核心依赖默认可见；命名依赖组可按测试、开发或其他用途选择。
 - 可选 shell hook 只执行已信任、已锁定、已缓存的激活，不下载或升级。
 - 支持 76 个公开 Agent 目标，并增加 OpenAI 官方 `~/.agents/skills` 兼容项。
 - 冲突默认拒绝；`--replace` 会先创建可恢复备份。
@@ -61,6 +63,11 @@ skillsenv marketplace remove marketplace-name
 
 切换默认市场只影响省略 `@marketplace` 的后续安装，不改写已有依赖。
 
+用户登记的 Marketplace 保存在
+`${SKILLSENV_HOME:-$HOME/.skillsenv}/config.yaml`，适合个人跨项目使用。项目需要
+协作者共享的来源应声明在项目根目录 `.skillsenv` 中；同名项目声明优先于用户
+登记。
+
 ## 项目环境
 
 ```sh
@@ -77,6 +84,9 @@ skillsenv status
 
 ```yaml
 schema_version: 1
+marketplaces:
+  team-market:
+    source: ./plugin-marketplace
 dependencies:
   - plugin: quality-plugin@team-market
     agents:
@@ -88,6 +98,72 @@ dependencies:
 
 省略 `--skill` 时投影 Plugin 中发现的全部 Skill。项目发现采用最近父目录规则；
 嵌套项目不会与更远父目录的清单隐式合并。
+
+`marketplaces` 的来源支持本地相对目录、GitHub `owner/repo`、Git URL 或远程
+`marketplace.json`。项目本地来源必须以 `./` 开头并位于项目根目录内；显式解析
+时 Skillsenv 将解析出的 Skill 复制到用户缓存，lock 只记录相对来源和内容固定点。
+由此，其他协作者取得同一项目目录后，不需要复用原作者的绝对路径或用户级市场
+配置。
+
+## 协作一致性
+
+项目环境由共享声明、共享解析结果与个人激活状态共同组成：
+
+| 位置 | 职责 | 是否提交 |
+| --- | --- | --- |
+| `.skillsenv` | Marketplace 来源、核心依赖、命名依赖组 | 是 |
+| `.skillsenv.lock` | 全部声明的 Marketplace、Plugin 与 Skill 固定结果 | 是 |
+| `${SKILLSENV_HOME}/state/` | 当前用户启用的依赖组与托管链接 | 否 |
+| `${SKILLSENV_HOME}/config.yaml` | 当前用户跨项目复用的 Marketplace 登记 | 否 |
+
+协作者提交 `.skillsenv`、`.skillsenv.lock` 和项目内本地 Marketplace 内容，即可
+共享同一依赖全集。首次取得项目后，执行一次显式 `skillsenv sync` 建立本机缓存，
+再执行 `skillsenv trust`。之后 `sync --frozen` 和自动 `activate` 只读取共享 lock
+与本机缓存，不重新解析来源或联网。
+
+Skillsenv 保证项目声明的 Skill 内容和目标一致，不接管 Agent 自己的用户级、
+管理员级或系统级 Skill。每位协作者可以保留个人 Skill，因此“依赖一致”不等于
+“进程只看得到这些 Skill”的严格隔离。
+
+## 依赖组
+
+`dependencies` 是始终启用的核心依赖（core dependencies）。
+`dependency_groups` 是任意数量、任意合法名称的依赖组（dependency groups），用于
+表达测试、开发、文档或其他按需环境；Skillsenv 不预设组名或固定组数。
+
+```yaml
+schema_version: 1
+marketplaces:
+  team-market:
+    source: ./plugin-marketplace
+dependencies:
+  - plugin: core-plugin@team-market
+    agents: [claude-code, codex]
+dependency_groups:
+  test:
+    - plugin: test-plugin@team-market
+      agents: [claude-code]
+  development:
+    - plugin: dev-plugin@team-market
+      agents: [claude-code, codex]
+```
+
+默认只同步核心依赖；可选择一个、多个或全部组：
+
+```sh
+skillsenv sync
+skillsenv sync --group test
+skillsenv sync --group test --group development
+skillsenv sync --all-groups
+```
+
+每次非冻结同步都会把核心依赖和所有组解析进同一个 `.skillsenv.lock`，但只链接
+核心依赖与本次选择的组。选择保存在当前用户的本机状态中，不改写共享清单或 lock；
+`activate` 会恢复最近一次成功同步的选择。未知组、重复 Plugin，以及同时使用
+`--group` 与 `--all-groups` 都会快速失败。
+
+这里不使用 npm `optionalDependencies` 术语，因为该字段表示依赖安装失败时仍可
+继续；Skillsenv 的组内依赖仍是严格依赖，只是由用户显式选择是否启用该组。
 
 显式同步命令：
 
@@ -138,6 +214,7 @@ skillsenv shell-init fish | source
 ```sh
 skillsenv install plugin@market --agent claude --dry-run
 skillsenv sync --dry-run
+skillsenv sync --group test --dry-run
 skillsenv sync --replace
 skillsenv agents
 ```

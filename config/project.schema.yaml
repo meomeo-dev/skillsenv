@@ -5,10 +5,27 @@ project_manifest:
   required: [schema_version, dependencies]
   example:
     schema_version: 1
+    marketplaces:
+      team-market:
+        source: ./plugin-marketplace
     dependencies:
-      - plugin: quality-review-plugin@my-plugins
+      - plugin: quality-review-plugin@team-market
         agents: [claude-code, codex]
         skills: [quality-review]
+    dependency_groups:
+      test:
+        - plugin: test-support-plugin@team-market
+          agents: [claude-code]
+
+marketplaces:
+  type: optional-object
+  scope: project-only
+  entry_required: [source]
+  source:
+    type: non-empty-string
+    contract: >-
+      支持项目内 ./ 相对目录、GitHub shorthand、Git URL 或远程 JSON；项目内目录
+      不得逃逸项目根，项目声明优先于同名用户登记。
 
 user_manifest:
   path: "${SKILLSENV_HOME:-$HOME/.skillsenv}/user.yaml"
@@ -30,6 +47,14 @@ dependency:
     items: discovered-skill-name
     contract: 省略时投影 Plugin 中发现的全部有效 Skill。
 
+dependency_groups:
+  type: optional-object
+  key_format: lowercase-kebab-case
+  value: non-empty-dependency-array
+  contract: >-
+    dependencies 始终启用；每个命名组按用户选择启用。Plugin 不得在核心依赖或
+    多个组中重复声明。组名和组数由项目定义，工具不提供固定集合。
+
 lock_file:
   path: .skillsenv.lock
   required: [schema_version, manifest_sha256, dependencies]
@@ -43,13 +68,14 @@ lock_file:
     - version
     - agents
     - skills
+  optional_dependency_fields: [dependency_group]
   skill_fields: [name, path, sha256, cache_path_or_local_path]
   contract: >-
-    锁文件记录已解析 Marketplace、Plugin 和 Skill 摘要；显式 sync 可以下载，
-    shell hook 只能消费已信任且已缓存的锁定结果。
+    锁文件记录核心依赖与所有组中已解析 Marketplace、Plugin 和 Skill 摘要；
+    显式 sync 可以下载，shell hook 只能消费已信任且已缓存的锁定结果。
 
 managed_state:
   path: "${SKILLSENV_HOME:-$HOME/.skillsenv}/state"
   contract: >-
-    状态仅登记 Skillsenv 创建的链接；clean 和后续 sync 只移除仍指向原记录源的
-    托管链接，不删除未知文件、目录或已被用户改写的链接。
+    状态登记当前用户启用的依赖组及 Skillsenv 创建的链接；clean 和后续 sync
+    只移除仍指向原记录源的托管链接，不删除未知文件、目录或已被用户改写的链接。

@@ -3,7 +3,7 @@ import { environmentCommand } from "./environment-commands.mjs";
 import { fail } from "./errors.mjs";
 import { marketplaceCommand } from "./marketplace-commands.mjs";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 const HELP = `Usage: skillsenv <command> [options]
 
@@ -31,6 +31,8 @@ Common options:
   --scope <project|user>          Select project (default) or user environment
   --agent <id[,id...]>            Agent targets for install
   --skill <name[,name...]>        Skill filter for install
+  --group <name[,name...]>        Enable dependency groups during sync
+  --all-groups                    Enable every dependency group during sync
   --replace                       Back up conflicting entries before linking
   --dry-run                       Resolve and preflight without persistent changes
   --frozen                        Sync only the existing lock and cache

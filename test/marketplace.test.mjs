@@ -196,8 +196,8 @@ test("version command matches the package release", async () => {
   try {
     const context = testContext(root);
     const { result, output } = await invoke(context, ["--version"]);
-    assert.equal(result.version, "0.1.0");
-    assert.deepEqual(output, ["0.1.0"]);
+    assert.equal(result.version, "0.2.0");
+    assert.deepEqual(output, ["0.2.0"]);
   } finally {
     removeRoot(root);
   }
