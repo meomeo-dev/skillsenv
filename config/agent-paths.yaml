@@ -1,0 +1,375 @@
+schema_version: 1
+source:
+  repository: https://github.com/vercel-labs/skills
+  file: src/agents.ts
+  commit: 1164afa5f0e21ebd01e6fc11249759353f494ad1
+  package_version: 1.5.21
+  captured_at: 2026-08-01
+  upstream_agent_count: 76
+  license: MIT
+  copyright: Copyright (c) 2026 Vercel, Inc.
+  license_notice: |
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+extensions:
+  codex_universal:
+    source: https://developers.openai.com/codex/skills
+    purpose: OpenAI 官方通用用户级目录兼容项，不参与 --agent all
+roots:
+  home:
+    kind: home
+  xdg-config:
+    env: XDG_CONFIG_HOME
+    fallback: {root: home, path: .config}
+  claude-home:
+    env: CLAUDE_CONFIG_DIR
+    fallback: {root: home, path: .claude}
+  codex-home:
+    env: CODEX_HOME
+    fallback: {root: home, path: .codex}
+  autohand-home:
+    env: AUTOHAND_HOME
+    fallback: {root: home, path: .autohand}
+  vibe-home:
+    env: VIBE_HOME
+    fallback: {root: home, path: .vibe}
+  hermes-home:
+    env: HERMES_HOME
+    fallback: {root: home, path: .hermes}
+  grok-home:
+    env: GROK_HOME
+    fallback: {root: home, path: .grok}
+  openclaw-home:
+    candidates:
+      - {root: home, path: .openclaw}
+      - {root: home, path: .clawdbot}
+      - {root: home, path: .moltbot}
+agents:
+  aider-desk:
+    display_name: AiderDesk
+    project_dir: .aider-desk/skills
+    user_dir: {root: home, path: .aider-desk/skills}
+  amp:
+    display_name: Amp
+    project_dir: .agents/skills
+    user_dir: {root: xdg-config, path: agents/skills}
+  antigravity:
+    display_name: Antigravity
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .gemini/antigravity/skills}
+  antigravity-cli:
+    display_name: Antigravity CLI
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .gemini/antigravity-cli/skills}
+  astrbot:
+    display_name: AstrBot
+    project_dir: data/skills
+    user_dir: {root: home, path: .astrbot/data/skills}
+  autohand-code:
+    display_name: Autohand Code CLI
+    project_dir: .autohand/skills
+    user_dir: {root: autohand-home, path: skills}
+  augment:
+    display_name: Augment
+    project_dir: .augment/skills
+    user_dir: {root: home, path: .augment/skills}
+  bob:
+    display_name: IBM Bob
+    project_dir: .bob/skills
+    user_dir: {root: home, path: .bob/skills}
+  claude-code:
+    display_name: Claude Code
+    aliases: [claude]
+    project_dir: .claude/skills
+    user_dir: {root: claude-home, path: skills}
+  openclaw:
+    display_name: OpenClaw
+    project_dir: skills
+    user_dir: {root: openclaw-home, path: skills}
+  cline:
+    display_name: Cline
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+  codearts-agent:
+    display_name: CodeArts Agent
+    project_dir: .codeartsdoer/skills
+    user_dir: {root: home, path: .codeartsdoer/skills}
+  codebuddy:
+    display_name: CodeBuddy
+    project_dir: .codebuddy/skills
+    user_dir: {root: home, path: .codebuddy/skills}
+  codemaker:
+    display_name: Codemaker
+    project_dir: .codemaker/skills
+    user_dir: {root: home, path: .codemaker/skills}
+  codestudio:
+    display_name: Code Studio
+    project_dir: .codestudio/skills
+    user_dir: {root: home, path: .codestudio/skills}
+  codex:
+    display_name: Codex
+    project_dir: .agents/skills
+    user_dir: {root: codex-home, path: skills}
+  command-code:
+    display_name: Command Code
+    project_dir: .commandcode/skills
+    user_dir: {root: home, path: .commandcode/skills}
+  continue:
+    display_name: Continue
+    project_dir: .continue/skills
+    user_dir: {root: home, path: .continue/skills}
+  cortex:
+    display_name: Cortex Code
+    project_dir: .cortex/skills
+    user_dir: {root: home, path: .snowflake/cortex/skills}
+  crush:
+    display_name: Crush
+    project_dir: .crush/skills
+    user_dir: {root: home, path: .config/crush/skills}
+  cursor:
+    display_name: Cursor
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .cursor/skills}
+  deepagents:
+    display_name: Deep Agents
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .deepagents/agent/skills}
+  devin:
+    display_name: Devin for Terminal
+    project_dir: .devin/skills
+    user_dir: {root: xdg-config, path: devin/skills}
+  dexto:
+    display_name: Dexto
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+  droid:
+    display_name: Droid
+    project_dir: .factory/skills
+    user_dir: {root: home, path: .factory/skills}
+  eve:
+    display_name: Eve
+    project_dir: agent/skills
+    user_dir: null
+  firebender:
+    display_name: Firebender
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .firebender/skills}
+  forgecode:
+    display_name: ForgeCode
+    project_dir: .forge/skills
+    user_dir: {root: home, path: .forge/skills}
+  gemini-cli:
+    display_name: Gemini CLI
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .gemini/skills}
+  github-copilot:
+    display_name: GitHub Copilot
+    aliases: [copilot]
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .copilot/skills}
+  goose:
+    display_name: Goose
+    project_dir: .goose/skills
+    user_dir: {root: xdg-config, path: goose/skills}
+  grok:
+    display_name: Grok Build
+    project_dir: .grok/skills
+    user_dir: {root: grok-home, path: skills}
+  hermes-agent:
+    display_name: Hermes Agent
+    project_dir: .hermes/skills
+    user_dir: {root: hermes-home, path: skills}
+  inference-sh:
+    display_name: inference.sh
+    project_dir: .inferencesh/skills
+    user_dir: {root: home, path: .inferencesh/skills}
+  jazz:
+    display_name: Jazz
+    project_dir: .jazz/skills
+    user_dir: {root: home, path: .jazz/skills}
+  junie:
+    display_name: Junie
+    project_dir: .junie/skills
+    user_dir: {root: home, path: .junie/skills}
+  iflow-cli:
+    display_name: iFlow CLI
+    project_dir: .iflow/skills
+    user_dir: {root: home, path: .iflow/skills}
+  kilo:
+    display_name: Kilo Code
+    project_dir: .kilocode/skills
+    user_dir: {root: home, path: .kilocode/skills}
+  kimchi:
+    display_name: Kimchi
+    project_dir: .kimchi/skills
+    user_dir: {root: home, path: .config/kimchi/harness/skills}
+  kimi-code-cli:
+    display_name: Kimi Code CLI
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+  kiro-cli:
+    display_name: Kiro CLI
+    project_dir: .kiro/skills
+    user_dir: {root: home, path: .kiro/skills}
+  kode:
+    display_name: Kode
+    project_dir: .kode/skills
+    user_dir: {root: home, path: .kode/skills}
+  lingma:
+    display_name: Lingma
+    project_dir: .lingma/skills
+    user_dir: {root: home, path: .lingma/skills}
+  loaf:
+    display_name: Loaf
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+  mcpjam:
+    display_name: MCPJam
+    project_dir: .mcpjam/skills
+    user_dir: {root: home, path: .mcpjam/skills}
+  minimax-code:
+    display_name: MiniMax Code
+    project_dir: .minimax/skills
+    user_dir: {root: home, path: .minimax/skills}
+  mistral-vibe:
+    display_name: Mistral Vibe
+    project_dir: .vibe/skills
+    user_dir: {root: vibe-home, path: skills}
+  moxby:
+    display_name: Moxby
+    project_dir: .moxby/skills
+    user_dir: {root: home, path: .moxby/skills}
+  mux:
+    display_name: Mux
+    project_dir: .mux/skills
+    user_dir: {root: home, path: .mux/skills}
+  opencode:
+    display_name: OpenCode
+    project_dir: .agents/skills
+    user_dir: {root: xdg-config, path: opencode/skills}
+  openhands:
+    display_name: OpenHands
+    project_dir: .openhands/skills
+    user_dir: {root: home, path: .openhands/skills}
+  ona:
+    display_name: Ona
+    project_dir: .ona/skills
+    user_dir: {root: home, path: .ona/skills}
+  pi:
+    display_name: Pi
+    project_dir: .pi/skills
+    user_dir: {root: home, path: .pi/agent/skills}
+  qoder:
+    display_name: Qoder
+    project_dir: .qoder/skills
+    user_dir: {root: home, path: .qoder/skills}
+  qoder-cn:
+    display_name: Qoder CN
+    project_dir: .qoder/skills
+    user_dir: {root: home, path: .qoder-cn/skills}
+  qwen-code:
+    display_name: Qwen Code
+    project_dir: .qwen/skills
+    user_dir: {root: home, path: .qwen/skills}
+  replit:
+    display_name: Replit
+    project_dir: .agents/skills
+    user_dir: {root: xdg-config, path: agents/skills}
+  reasonix:
+    display_name: Reasonix
+    project_dir: .reasonix/skills
+    user_dir: {root: home, path: .reasonix/skills}
+  rovodev:
+    display_name: Rovo Dev
+    project_dir: .rovodev/skills
+    user_dir: {root: home, path: .rovodev/skills}
+  roo:
+    display_name: Roo Code
+    project_dir: .roo/skills
+    user_dir: {root: home, path: .roo/skills}
+  tabnine-cli:
+    display_name: Tabnine CLI
+    project_dir: .tabnine/agent/skills
+    user_dir: {root: home, path: .tabnine/agent/skills}
+  terramind:
+    display_name: Terramind
+    project_dir: .terramind/skills
+    user_dir: {root: home, path: .terramind/skills}
+  tinycloud:
+    display_name: Tinycloud
+    project_dir: .tinycloud/skills
+    user_dir: {root: home, path: .tinycloud/skills}
+  trae:
+    display_name: Trae
+    project_dir: .trae/skills
+    user_dir: {root: home, path: .trae/skills}
+  trae-cn:
+    display_name: Trae CN
+    project_dir: .trae/skills
+    user_dir: {root: home, path: .trae-cn/skills}
+  warp:
+    display_name: Warp
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+  windsurf:
+    display_name: Windsurf
+    project_dir: .windsurf/skills
+    user_dir: {root: home, path: .codeium/windsurf/skills}
+  zed:
+    display_name: Zed
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+  zcode:
+    display_name: ZCode
+    project_dir: .zcode/skills
+    user_dir: {root: home, path: .zcode/skills}
+  zencoder:
+    display_name: Zencoder
+    project_dir: .zencoder/skills
+    user_dir: {root: home, path: .zencoder/skills}
+  zenflow:
+    display_name: Zenflow
+    project_dir: .zencoder/skills
+    user_dir: {root: home, path: .zencoder/skills}
+  neovate:
+    display_name: Neovate
+    project_dir: .neovate/skills
+    user_dir: {root: home, path: .neovate/skills}
+  pochi:
+    display_name: Pochi
+    project_dir: .pochi/skills
+    user_dir: {root: home, path: .pochi/skills}
+  promptscript:
+    display_name: PromptScript
+    project_dir: .agents/skills
+    user_dir: null
+  adal:
+    display_name: AdaL
+    project_dir: .adal/skills
+    user_dir: {root: home, path: .adal/skills}
+  universal:
+    display_name: Universal
+    project_dir: .agents/skills
+    user_dir: {root: xdg-config, path: agents/skills}
+  codex-universal:
+    display_name: Codex (OpenAI universal path)
+    aliases: [codex-official]
+    project_dir: .agents/skills
+    user_dir: {root: home, path: .agents/skills}
+    include_in_all: false
+    origin: openai-official

@@ -1,0 +1,41 @@
+{
+  "name": "skillsenv",
+  "version": "0.1.0",
+  "description": "声明式管理多市场、多 Agent 和目录级 Skill 可见性",
+  "type": "module",
+  "bin": {
+    "skillsenv": "bin/skillsenv.mjs"
+  },
+  "files": [
+    "bin/",
+    "config/",
+    "docs/",
+    "src/",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check bin/skillsenv.mjs && node --check src/*.mjs",
+    "verify": "npm run check && npm test && npm audit --audit-level=moderate",
+    "prepublishOnly": "npm run verify"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "agent-skills",
+    "skills",
+    "environment",
+    "claude-code",
+    "codex"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/meomeo-dev/skillsenv.git"
+  },
+  "dependencies": {
+    "js-yaml": "4.3.1"
+  }
+}

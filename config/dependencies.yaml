@@ -1,0 +1,21 @@
+schema_version: 1
+dependencies:
+  js-yaml:
+    version: 4.3.1
+    purpose: 解析和生成声明式市场、依赖、锁文件与 Agent 路径 YAML
+    rationale: >-
+      成熟、轻量、MIT 许可，支持安全 JSON schema；4.3.1 修复已知 merge-key
+      原型污染与二次复杂度 DoS，npm audit 在 2026-08-01 无已知漏洞
+    alternatives:
+      - 手写 YAML 解析器会扩大格式错误和安全边界
+      - JSON 会降低人工编辑依赖文件的可读性
+    boundary: 仅用于 YAML 与 JavaScript 对象转换，不参与文件系统或 Git 操作
+    exit_condition: Node.js 标准库提供兼容 YAML 支持，或项目切换为 JSON 契约
+    license: MIT
+    supply_chain:
+      direct_dependency: true
+      lock_policy: 固定 4.3.1 并提交 package-lock.json；升级须通过测试与 npm audit
+      transitive_dependencies:
+        - name: argparse
+          version: 2.0.1
+          license: Python-2.0

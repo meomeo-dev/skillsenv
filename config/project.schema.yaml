@@ -1,0 +1,55 @@
+schema_version: 1
+
+project_manifest:
+  path: .skillsenv
+  required: [schema_version, dependencies]
+  example:
+    schema_version: 1
+    dependencies:
+      - plugin: quality-review-plugin@my-plugins
+        agents: [claude-code, codex]
+        skills: [quality-review]
+
+user_manifest:
+  path: "${SKILLSENV_HOME:-$HOME/.skillsenv}/user.yaml"
+  required: [schema_version, dependencies]
+  example:
+    schema_version: 1
+    dependencies: []
+
+dependency:
+  required: [plugin, agents]
+  plugin:
+    format: plugin-name@marketplace-name
+    contract: 使用 Claude Code 的 Plugin 安装标识，不直接引用市场中的 Skill。
+  agents:
+    type: non-empty-array
+    items: agent-id
+  skills:
+    type: optional-non-empty-array
+    items: discovered-skill-name
+    contract: 省略时投影 Plugin 中发现的全部有效 Skill。
+
+lock_file:
+  path: .skillsenv.lock
+  required: [schema_version, manifest_sha256, dependencies]
+  dependency_fields:
+    - plugin
+    - marketplace
+    - marketplace_source
+    - marketplace_revision
+    - plugin_source
+    - plugin_revision
+    - version
+    - agents
+    - skills
+  skill_fields: [name, path, sha256, cache_path_or_local_path]
+  contract: >-
+    锁文件记录已解析 Marketplace、Plugin 和 Skill 摘要；显式 sync 可以下载，
+    shell hook 只能消费已信任且已缓存的锁定结果。
+
+managed_state:
+  path: "${SKILLSENV_HOME:-$HOME/.skillsenv}/state"
+  contract: >-
+    状态仅登记 Skillsenv 创建的链接；clean 和后续 sync 只移除仍指向原记录源的
+    托管链接，不删除未知文件、目录或已被用户改写的链接。
