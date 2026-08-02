@@ -20,6 +20,16 @@ Skillsenv 不是完整 Plugin 运行时。Plugin 含 commands、agents、hooks�
 monitors、依赖或其他非 Skill 组件时，安装会明确拒绝。协议细节见
 [`docs/claude-code-marketplace-protocol.md`](docs/claude-code-marketplace-protocol.md)。
 
+## Agent 目录来源
+
+Skillsenv 是独立实现，不是 `vercel-labs/skills` 的 fork。Agent 清单、项目级
+Skill 目录和用户级 Skill 目录的配置数据来自公开上游
+[`vercel-labs/skills`](https://github.com/vercel-labs/skills) 的 `src/agents.ts`，
+经过固定提交审查后写入
+[`config/agent-paths.yaml`](config/agent-paths.yaml)。运行时只读取这份固定注册表，
+不下载或执行上游代码。拉取、差异判断、投影与发布流程见
+[`docs/upstream-agent-paths-sync.md`](docs/upstream-agent-paths-sync.md)。
+
 ## 安装
 
 要求 Node.js 18 或更高版本：
