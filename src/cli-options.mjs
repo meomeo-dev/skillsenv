@@ -3,6 +3,7 @@ import { fail } from "./errors.mjs";
 const VALUE_OPTIONS = new Set([
   "--agent",
   "--skill",
+  "--group",
   "--scope",
   "--root",
 ]);
@@ -11,11 +12,12 @@ const BOOLEAN_OPTIONS = new Set([
   "--replace",
   "--frozen",
   "--quiet",
+  "--all-groups",
 ]);
 
 function addValue(options, name, value) {
   if (!value) fail(`${name} requires a value`);
-  if (name === "--agent" || name === "--skill") {
+  if (name === "--agent" || name === "--skill" || name === "--group") {
     const key = name.slice(2) + "s";
     options[key] ??= [];
     for (const item of value.split(",").map((part) => part.trim()).filter(Boolean)) {

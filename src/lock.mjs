@@ -9,7 +9,7 @@ import {
   sha256Directory,
   sha256File,
 } from "./io.mjs";
-import { parsePluginId } from "./manifest.mjs";
+import { manifestDependencies, parsePluginId } from "./manifest.mjs";
 import { installedSkillPath } from "./resolver.mjs";
 
 export function loadLock(path, manifest, paths) {
@@ -24,7 +24,10 @@ export function loadLock(path, manifest, paths) {
   }
   const pluginIds = new Set();
   const manifestByPlugin = new Map(
-    manifest.value.dependencies.map((dependency) => [dependency.plugin, dependency]),
+    manifestDependencies(manifest.value).map(({ dependency, dependencyGroup }) => [
+      dependency.plugin,
+      { dependency, dependencyGroup },
+    ]),
   );
   if (value.dependencies.length !== manifestByPlugin.size) {
     fail("Lock dependencies do not match the manifest");
@@ -47,7 +50,7 @@ function sameSet(left, right) {
     sortedLeft.every((value, index) => value === sortedRight[index]);
 }
 
-function validateDependency(dependency, pluginIds, paths, manifestDependency) {
+function validateDependency(dependency, pluginIds, paths, manifestEntry) {
   if (!dependency || typeof dependency.plugin !== "string" ||
       !Array.isArray(dependency.agents) || !Array.isArray(dependency.skills)) {
     fail("Lock dependency requires plugin, agents, and skills");
@@ -55,8 +58,12 @@ function validateDependency(dependency, pluginIds, paths, manifestDependency) {
   if (pluginIds.has(dependency.plugin)) {
     fail(`Lock contains duplicate Plugin: ${dependency.plugin}`);
   }
-  if (!manifestDependency) {
+  if (!manifestEntry) {
     fail(`Lock contains a Plugin absent from the manifest: ${dependency.plugin}`);
+  }
+  const { dependency: manifestDependency, dependencyGroup } = manifestEntry;
+  if ((dependency.dependency_group ?? null) !== dependencyGroup) {
+    fail(`Lock dependency group differs from manifest: ${dependency.plugin}`);
   }
   const parsed = parsePluginId(dependency.plugin);
   if (dependency.marketplace !== parsed.marketplace) {

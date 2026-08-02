@@ -12,7 +12,7 @@ import {
   sha256Directory,
   writeYaml,
 } from "./io.mjs";
-import { parsePluginId } from "./manifest.mjs";
+import { manifestDependencies, parsePluginId } from "./manifest.mjs";
 import { registeredMarketplace } from "./marketplace.mjs";
 import { materializePlugin, normalizedPluginSource } from "./plugin-source.mjs";
 import {
@@ -78,7 +78,7 @@ function buildCache(paths, identity, skills, persist) {
   return { cacheKey, cacheRoot };
 }
 
-function resolveDependency(dependency, config, paths, options) {
+function resolveDependency(dependency, dependencyGroup, config, paths, options) {
   const parsed = parsePluginId(dependency.plugin);
   const registration = config.marketplaces[parsed.marketplace];
   if (!registration) fail(`Marketplace is not registered: ${parsed.marketplace}`);
@@ -112,6 +112,7 @@ function resolveDependency(dependency, config, paths, options) {
         materialized.gitRevision,
       ),
       ...(cache && { cache_key: cache.cacheKey }),
+      ...(dependencyGroup && { dependency_group: dependencyGroup }),
       agents: dependency.agents,
       skills: selected.map((skill) => ({
         name: skill.name,
@@ -139,8 +140,14 @@ export function resolveLock(manifest, config, paths, options = {}) {
     persistCache: options.persistCache !== false,
     env: options.env ?? process.env,
   };
-  const dependencies = manifest.value.dependencies.map((dependency) =>
-    resolveDependency(dependency, config, paths, resolvedOptions),
+  const dependencies = manifestDependencies(manifest.value).map((entry) =>
+    resolveDependency(
+      entry.dependency,
+      entry.dependencyGroup,
+      config,
+      paths,
+      resolvedOptions,
+    ),
   );
   return {
     schema_version: 1,

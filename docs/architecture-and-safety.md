@@ -9,7 +9,7 @@ Skillsenv 分离四类对象：
 | Marketplace | 发布 Plugin 条目 | `.claude-plugin/marketplace.json` |
 | Plugin | 封装一个或多个组件 | Marketplace entry 与 `plugin.json` |
 | Skill projection | 可跨 Agent 投影的 Skill 子集 | Skill 发现结果与用户过滤器 |
-| Environment | 把锁定 Skill 分配到 Agent 目录 | `.skillsenv` 与 `.skillsenv.lock` |
+| Environment | 把锁定 Skill 分配到 Agent 目录 | `.skillsenv`、lock 与本机状态 |
 
 Marketplace 是上游发布协议；`.skillsenv` 是用户选择协议。二者字段不混用。
 
@@ -18,12 +18,12 @@ Marketplace 是上游发布协议；`.skillsenv` 是用户选择协议。二者�
 显式解析流程：
 
 ```text
-marketplace registration
+project declaration or user marketplace registration
   -> marketplace.json validation
   -> plugin source materialization
   -> Skill-only component audit
   -> Skill discovery and filtering
-  -> content-addressed cache or verified local path
+  -> content-addressed cache or verified user-local path
   -> .skillsenv.lock
   -> complete link preflight
   -> managed state
@@ -35,6 +35,7 @@ marketplace registration
 nearest .skillsenv
   -> existing lock validation
   -> trust digest validation
+  -> local dependency-group selection
   -> existing cache/local digest validation
   -> idempotent link synchronization
 ```
@@ -44,7 +45,8 @@ nearest .skillsenv
 ## 写入所有权
 
 - Marketplace 注册、用户清单、信任和托管状态位于 `SKILLSENV_HOME`。
-- 项目只写 `.skillsenv`、`.skillsenv.lock` 与 Agent 原生项目 Skill 目录。
+- 项目只写 `.skillsenv`、`.skillsenv.lock` 与 Agent 原生项目 Skill 目录；项目来源
+  的物化快照仍写入 `SKILLSENV_HOME` 缓存。
 - 正确的既有外部链接可以复用，但状态标记为非所有（not owned）。
 - `clean` 与 stale-link 清理只删除 owned 且仍指向记录源的链接。
 - 普通文件、目录、错误链接或非所有链接的变更默认拒绝。
@@ -60,6 +62,7 @@ stale-link 删除、备份移动和清单/锁变更。无法完成回滚时错�
 | Git Marketplace | 注册时的 commit SHA |
 | 远程 JSON Marketplace | JSON SHA-256 |
 | 本地 Marketplace | Git HEAD 或 manifest SHA-256 |
+| 项目内本地 Marketplace | 相对来源、manifest SHA-256 与 Skill 内容摘要 |
 | Git Plugin | 有效 commit SHA，显式 `sha` 优先于 `ref` |
 | npm Plugin | 请求 spec、实际 package version 与 Skill 内容摘要 |
 | 本地相对 Plugin | 原始绝对路径与 Skill 内容摘要 |
@@ -67,9 +70,15 @@ stale-link 删除、备份移动和清单/锁变更。无法完成回滚时错�
 远程 Skill 复制到内容寻址缓存。本地相对 Plugin 直接链接规范 Skill，以支持即时
 开发；源内容改变会使锁摘要验证失败，必须重新锁定并信任。
 
+上述直接链接只适用于用户登记的本地 Marketplace。项目 `.skillsenv` 声明的本地
+Marketplace 会把解析出的 Skill 复制为锁定的内容缓存；共享 lock 不记录机器绝对
+路径。`dependencies` 与全部 `dependency_groups` 使用同一个 lock，当前用户启用
+的组只记录在本机托管状态中。
+
 ## 路径不变式
 
 - 相对 Marketplace、Plugin 和 Skill 路径在规范化前后都不得逃逸所属根目录。
+- 项目声明的本地 Marketplace 必须使用 `./` 相对路径且位于项目根目录内。
 - 真实路径和符号链接解析后仍必须位于所属根目录。
 - 复制进缓存的 Skill 不接受绝对符号链接或指向 Skill 根外的符号链接。
 - 锁中的 `cache_path` 必须位于 Skillsenv Plugin 缓存根内。

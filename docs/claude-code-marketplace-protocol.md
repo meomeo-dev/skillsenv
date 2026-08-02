@@ -133,8 +133,8 @@ Skill 发现遵循以下顺序与边界：
 Skillsenv 将其视为冲突并拒绝，防止两个组件事实源产生含糊结果。
 
 若 Plugin 没有 `skills/` 且未声明 `skills`，Claude Code `2.1.142+` 可以把
-Plugin 根目录的单个 `SKILL.md` 作为 Skill。`my-skills` 当前每个条目直接指向
-规范 Skill 目录并使用 `strict: false`，正是依赖此根级 fallback，不维护第二份
+Plugin 根目录的单个 `SKILL.md` 作为 Skill。直接以 Skill 目录作为 Plugin source
+的本地 Marketplace 可以使用 `strict: false` 和该 fallback，而不维护第二份
 `skills/<name>/SKILL.md`。
 
 `.skillsenv` 可对已发现结果增加 Skill 过滤器：
@@ -142,7 +142,7 @@ Plugin 根目录的单个 `SKILL.md` 作为 Skill。`my-skills` 当前每个条�
 ```yaml
 schema_version: 1
 dependencies:
-  - plugin: quality-review-plugin@my-plugins
+  - plugin: quality-review-plugin@team-market
     agents: [claude-code, codex]
     skills: [quality-review]
 ```
@@ -169,9 +169,11 @@ source、所选 Agent、Skill 相对路径和 Skill 内容 SHA-256。锁文件�
 信任是否仍有效，不取代上游版本字段。
 
 远程、Git 与 npm Plugin 的 Skill 固定到 Skillsenv 内容缓存。本地 Marketplace
-中的相对 Plugin source 则直接链接原始 Skill，并在锁中记录 `local_path` 与内容
-摘要，以满足本地开发的即时反馈；这种链接天然可变，源文件变化会立即对 Agent
-可见，并使后续 `activate` 的摘要校验失败，直到用户显式重新锁定并信任。
+中的相对 Plugin source 根据 Marketplace 的声明位置分流：用户登记的本地市场直接
+链接原始 Skill，并在锁中记录 `local_path` 与内容摘要，以满足本地开发的即时反馈；
+项目 `.skillsenv` 声明的本地市场则缓存锁定快照，lock 只记录项目相对来源。前一种
+链接天然可变，源文件变化会使后续 `activate` 的摘要校验失败，直到显式重新锁定并
+信任；后一种可由 `sync --frozen` 和自动激活在原始来源不可用时继续消费。
 
 ## 可见性与信任
 
@@ -203,33 +205,26 @@ claude plugin validate /path/to/marketplace --strict
 Skillsenv 在读取时还要检查必填字段、名称唯一性、标准 source 形状、路径边界、
 Plugin/Skill 唯一性和选择器有效性。官方校验通过不解除本地信任与链接冲突门禁。
 
-## `my-skills` 发布同步契约
+## 本地或团队 Marketplace 协作契约
 
-`my-skills` 使用本地目录 Marketplace，不发布为远程市场。仓库中的三类事实源各有
-独立职责：
+本地或团队 Plugin Marketplace 可以作为项目内目录提交，也可以通过 Git 或远程
+JSON 发布。无论使用哪种分发方式，都必须保持以下映射：
 
-| 事实源 | 负责内容 | 不负责内容 |
-| --- | --- | --- |
-| `catalog.yaml` | Skill 路径、版本、运行文件 SHA-256、发布历史 | Claude Marketplace 解析 |
-| `.claude-plugin/marketplace.json` | Plugin 名、source、版本、描述和 strict 模式 | Skill 文件校验和与历史 release |
-| Skill 规范目录 | `SKILL.md` 及运行资源的唯一可变副本 | 市场选择和安装作用域 |
-
-必须保持以下映射：
-
-- `plugins[].name` 等于 `catalog.yaml` 的 Skill `name`；
-- `plugins[].source` 等于 `./${catalog.path}`；
-- `plugins[].version` 等于 `catalog.current_version`；
-- source 目录存在，根级 `SKILL.md` frontmatter `name` 与 Plugin 名一致；
+- `plugins[].name` 与其 Plugin manifest 或根级 `SKILL.md` 名称一致；
+- `plugins[].source` 指向实际存在且完整自包含的 Plugin source；
+- `plugins[].version` 与发布内容同步递增，不用旧版本号承载新内容；
+- 根级 `SKILL.md` fallback 的 frontmatter `name` 明确且稳定；
 - `strict: false` 条目不得从 `plugin.json` 引入第二套组件声明；
 - Plugin source 内不得出现 Skillsenv 拒绝的非 Skill 组件。
 
-根仓库的 `npm run validate` 已机械检查 Plugin 集合、source、version 和
-`strict: false`。运行文件缓存边界、Claude 版本兼容和真实会话可见性仍须由 Claude
-原生命令验证，不能由 catalog 校验替代。
+项目共享来源应写入 `.skillsenv` 的 `marketplaces`，项目内本地来源使用 `./` 相对
+路径；个人跨项目来源可通过 `skillsenv marketplace add` 登记。同名项目声明优先于
+个人登记。项目内 Marketplace、`.skillsenv` 和 `.skillsenv.lock` 应一同进入版本
+控制；`${SKILLSENV_HOME}` 下的缓存、信任与当前依赖组选择不应提交。
 
-新增、更新、移动或弃用 Skill 时，在同一变更中同步 catalog、README 和
-Marketplace。仅修改市场描述、不改变安装内容时不升级 Skill 版本；Skill 任一运行
-文件变化时，必须先按仓库 SemVer 规则升级 Skill，再同步 Marketplace 版本。
+Marketplace 发布者应在每次新增、更新、移动或弃用 Plugin 时同步清单与 source，
+运行自身仓库校验和 Claude 原生严格校验。仅修改市场描述而不改变安装内容时不必
+递增 Plugin 版本；任何运行内容变化都必须先递增版本，再更新 Marketplace 条目。
 
 ## Claude 协议更新流程
 

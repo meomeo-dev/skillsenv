@@ -21,8 +21,10 @@ import {
   proposedManifest,
   removeDependency,
   saveManifest,
+  selectDependencyGroups,
   upsertDependency,
 } from "./manifest.mjs";
+import { projectMarketplaceConfig } from "./marketplace.mjs";
 import { resolveLock, writeLock } from "./resolver.mjs";
 import { shellInit } from "./shell.mjs";
 import {
@@ -66,6 +68,7 @@ function syncResolved(context, environment, manifest, lockValue, options) {
       homeDir: context.homeDir,
       replace: options.replace === true,
       allowMissingCache: options.dry_run === true,
+      activeGroups: options.activeGroups ?? [],
     },
   );
   printPlan(context, plan, options.dry_run === true);
@@ -74,9 +77,39 @@ function syncResolved(context, environment, manifest, lockValue, options) {
       scope: environment.scope,
       root: environment.root,
       manifest_sha256: manifest.sha256,
+      active_groups: options.activeGroups ?? [],
     });
   }
   return plan;
+}
+
+function rejectGroupSelection(options, command) {
+  if (options.groups?.length || options.all_groups) {
+    fail(`${command} does not select dependency groups; use skillsenv sync`);
+  }
+}
+
+async function resolveEnvironmentLock(context, environment, options = {}) {
+  const userConfig = loadConfig(context.paths.config);
+  const projectConfig = await projectMarketplaceConfig(
+    environment.manifest,
+    userConfig,
+    context.paths,
+    {
+      persist: options.persistCache !== false,
+      env: context.env,
+    },
+  );
+  try {
+    return resolveLock(
+      environment.manifest,
+      projectConfig.config,
+      context.paths,
+      options,
+    );
+  } finally {
+    projectConfig.cleanup();
+  }
 }
 
 function captureFiles(paths) {
@@ -180,8 +213,9 @@ function mutationEnvironment(context, options, scope) {
   };
 }
 
-function dependencyMutation(context, args, remove) {
+async function dependencyMutation(context, args, remove) {
   const { options, positional } = parseOptions(args);
+  rejectGroupSelection(options, remove ? "uninstall" : "install");
   const input = onePositional(positional, "Plugin dependency");
   const scope = scopeOption(options);
   const environment = mutationEnvironment(context, options, scope);
@@ -200,9 +234,15 @@ function dependencyMutation(context, args, remove) {
     context.registry,
     scope,
   );
-  const lock = resolveLock(manifest, config, context.paths, {
+  const lock = await resolveEnvironmentLock(context, {
+    ...environment,
+    manifest,
+  }, {
     persistCache: !options.dry_run,
     env: context.env,
+  });
+  options.activeGroups = selectDependencyGroups(manifest.value, {
+    groups: loadState(environment.statePath).active_groups,
   });
   const plan = persistThenSync(context, environment, manifest, lock, options);
   context.write(
@@ -212,14 +252,14 @@ function dependencyMutation(context, args, remove) {
   return { kind: remove ? "uninstall" : "install", plugin: id, plan };
 }
 
-function lock(context, args) {
+async function lock(context, args) {
   const { options, positional } = parseOptions(args);
   if (positional.length) fail("lock takes no arguments");
+  rejectGroupSelection(options, "lock");
   const environment = loadEnvironment(context, options);
-  const value = resolveLock(
-    environment.manifest,
-    loadConfig(context.paths.config),
-    context.paths,
+  const value = await resolveEnvironmentLock(
+    context,
+    environment,
     { persistCache: !options.dry_run, env: context.env },
   );
   context.write(
@@ -230,21 +270,25 @@ function lock(context, args) {
   return { kind: "lock", lock: value };
 }
 
-function sync(context, args) {
+async function sync(context, args) {
   const { options, positional } = parseOptions(args);
   if (positional.length) fail("sync takes no arguments");
   const environment = loadEnvironment(context, options, options.frozen === true);
+  options.activeGroups = selectDependencyGroups(
+    environment.manifest.value,
+    options,
+  );
   const value = options.frozen
     ? environment.lock.value
-    : resolveLock(
-        environment.manifest,
-        loadConfig(context.paths.config),
-        context.paths,
+    : await resolveEnvironmentLock(
+        context,
+        environment,
         { persistCache: !options.dry_run, env: context.env },
       );
   const plan = persistLockThenSync(context, environment, value, options);
   context.write(
     `SUMMARY scope=${environment.scope} links=${plan.actions.length} ` +
+      `groups=${options.activeGroups.join(",") || "core"} ` +
       `dry_run=${options.dry_run === true}`,
   );
   return { kind: "sync", plan };
@@ -253,6 +297,7 @@ function sync(context, args) {
 function activate(context, args) {
   const { options, positional } = parseOptions(args);
   if (positional.length) fail("activate takes no arguments");
+  rejectGroupSelection(options, "activate");
   options.scope = "project";
   const start = resolve(context.cwd, options.root ?? ".");
   if (!findProject(start)) {
@@ -260,6 +305,10 @@ function activate(context, args) {
     return { kind: "activate", active: false };
   }
   const environment = loadEnvironment(context, options, true);
+  const state = loadState(environment.statePath);
+  options.activeGroups = selectDependencyGroups(environment.manifest.value, {
+    groups: state.active_groups,
+  });
   assertTrusted(
     context.paths.trust,
     environment.root,
@@ -357,6 +406,7 @@ function status(context, args) {
     );
   }
   context.write(`MANAGED ${state.managed.length}`);
+  context.write(`GROUPS ${state.active_groups.join(",") || "core"}`);
   return {
     kind: "status",
     found: true,

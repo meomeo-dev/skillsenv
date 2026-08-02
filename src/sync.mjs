@@ -59,18 +59,25 @@ function backupPath(paths, destination, reserved) {
 }
 
 export function loadState(path) {
-  if (!pathExists(path)) return { schema_version: 1, managed: [] };
-  const state = readJson(path, "Skillsenv managed state");
-  if (state.schema_version !== 1 || !Array.isArray(state.managed)) {
-    fail("Skillsenv managed state requires schema_version: 1 and managed[]");
+  if (!pathExists(path)) {
+    return { schema_version: 1, active_groups: [], managed: [] };
   }
-  return state;
+  const state = readJson(path, "Skillsenv managed state");
+  if (state.schema_version !== 1 || !Array.isArray(state.managed) ||
+      (state.active_groups !== undefined && !Array.isArray(state.active_groups))) {
+    fail(
+      "Skillsenv managed state requires schema_version, active_groups, and managed[]",
+    );
+  }
+  return { ...state, active_groups: state.active_groups ?? [] };
 }
 
 function desiredRecords(lock, scope, root, registry, paths, context) {
   const records = [];
   const destinations = new Map();
   for (const dependency of lock.value.dependencies) {
+    if (dependency.dependency_group &&
+        !context.activeGroups.includes(dependency.dependency_group)) continue;
     const groups = targetGroups(dependency.agents, scope, root, registry, context);
     for (const skill of dependency.skills) {
       const source = installedSkillPath(paths, skill, {
@@ -104,8 +111,9 @@ function desiredRecords(lock, scope, root, registry, paths, context) {
 }
 
 export function buildSyncPlan(lock, scope, root, registry, paths, state, options = {}) {
-  validateStateRecords(state, scope, root, registry, options);
-  const desired = desiredRecords(lock, scope, root, registry, paths, options);
+  const context = { ...options, activeGroups: options.activeGroups ?? [] };
+  validateStateRecords(state, scope, root, registry, context);
+  const desired = desiredRecords(lock, scope, root, registry, paths, context);
   const previousByDestination = new Map(
     state.managed.map((record) => [record.destination, record]),
   );
