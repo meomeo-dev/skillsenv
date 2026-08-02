@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { selectAgents } from "./agent-paths.mjs";
 import { fail } from "./errors.mjs";
 import {
+  fileExists,
   pathExists,
   readYaml,
   sha256,
@@ -205,7 +206,8 @@ export function findProject(start = process.cwd()) {
   let current = resolve(start);
   while (true) {
     const manifest = join(current, ".skillsenv");
-    if (pathExists(manifest)) return { root: current, manifest };
+    // Must be a file: ~/.skillsenv is the user state directory.
+    if (fileExists(manifest)) return { root: current, manifest };
     const parent = dirname(current);
     if (parent === current) return null;
     current = parent;

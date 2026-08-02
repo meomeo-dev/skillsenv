@@ -40,6 +40,18 @@ export function pathExists(path) {
   }
 }
 
+// Distinguishes a manifest file from a same-named directory. `~/.skillsenv` is
+// the user state directory, so a plain existence check would match it while
+// walking up and then try to read a directory as YAML.
+export function fileExists(path) {
+  try {
+    return statSync(path).isFile();
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 export function realpathOrNull(path) {
   try {
     return realpathSync(path);
@@ -255,6 +267,54 @@ export function run(command, args, options = {}) {
   return (result.stdout ?? "").trim();
 }
 
+// --offline is enforced at the egress points rather than threaded through every
+// call site, so no resolver path can quietly reach the network (CFI-008).
+let offlineMode = false;
+
+export function setOfflineMode(value) {
+  offlineMode = value === true;
+}
+
+export function isOffline() {
+  return offlineMode;
+}
+
+export function assertNetworkAllowed(what) {
+  if (offlineMode) {
+    fail(`${what} requires network access but --offline is set`);
+  }
+}
+
+// Git subcommands that never touch the network stay allowed while offline.
+const LOCAL_GIT_SUBCOMMANDS = new Set([
+  "rev-parse",
+  "checkout",
+  "config",
+  "status",
+  "sparse-checkout",
+]);
+
+// Skips the leading `-C <path>` so `git -C dir rev-parse` reads as `rev-parse`.
+function gitSubcommand(args) {
+  let cursor = 0;
+  while (cursor < args.length) {
+    if (args[cursor] === "-C") {
+      cursor += 2;
+      continue;
+    }
+    if (args[cursor].startsWith("-")) {
+      cursor += 1;
+      continue;
+    }
+    return args[cursor];
+  }
+  return null;
+}
+
 export function runGit(args, options = {}) {
+  const subcommand = gitSubcommand(args);
+  if (subcommand && !LOCAL_GIT_SUBCOMMANDS.has(subcommand)) {
+    assertNetworkAllowed(`git ${subcommand}`);
+  }
   return run("git", args, { ...options, env: cleanGitEnv(options.env) });
 }

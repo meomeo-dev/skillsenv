@@ -5,7 +5,7 @@ import {
   resolvedAgentRows,
   selectAgents,
 } from "./agent-paths.mjs";
-import { onePositional, parseOptions, scopeOption } from "./cli-options.mjs";
+import { scopeOption } from "./cli-options.mjs";
 import {
   loadEnvironment,
   manifestLocation,
@@ -83,12 +83,6 @@ function syncResolved(context, environment, manifest, lockValue, options) {
   return plan;
 }
 
-function rejectGroupSelection(options, command) {
-  if (options.groups?.length || options.all_groups) {
-    fail(`${command} does not select dependency groups; use skillsenv sync`);
-  }
-}
-
 async function resolveEnvironmentLock(context, environment, options = {}) {
   const userConfig = loadConfig(context.paths.config);
   const projectConfig = await projectMarketplaceConfig(
@@ -154,8 +148,30 @@ function persistThenSync(context, environment, manifest, lockValue, options) {
   }
 }
 
+// Writes the declaration and lock but leaves the environment alone. Shares the
+// snapshot/rollback path with persistThenSync so a partial write still restores.
+function persistWithoutSync(context, environment, manifest, lockValue, options) {
+  if (options.dry_run) return null;
+  const snapshots = captureFiles([
+    environment.manifestPath,
+    environment.lockPath,
+  ]);
+  try {
+    saveManifest(environment.manifestPath, manifest.value);
+    writeLock(environment.lockPath, lockValue);
+    return null;
+  } catch (error) {
+    const restoreErrors = restoreFiles(snapshots);
+    const suffix = restoreErrors.length
+      ? `; manifest rollback failures: ${restoreErrors.join("; ")}`
+      : "";
+    fail(`${error.message}${suffix}`);
+  }
+}
+
 function persistLockThenSync(context, environment, lockValue, options) {
-  if (options.dry_run || options.frozen) {
+  // --locked never rewrites the lock; --dry-run never writes at all.
+  if (options.dry_run || options.locked) {
     return syncResolved(
       context,
       environment,
@@ -183,16 +199,17 @@ function persistLockThenSync(context, environment, lockValue, options) {
   }
 }
 
-function init(context, args) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail("init takes no arguments");
+function init({ context, options }) {
   const path = join(context.cwd, ".skillsenv");
   if (options.dry_run) context.write(`DRY-RUN CREATE ${path}`);
   else {
     createManifest(path);
     context.write(`CREATED ${path}`);
   }
-  return { kind: "init" };
+  return {
+    kind: "init",
+    data: { kind: "init", manifest: path, dry_run: options.dry_run === true },
+  };
 }
 
 function mutationEnvironment(context, options, scope) {
@@ -200,7 +217,7 @@ function mutationEnvironment(context, options, scope) {
   if (pathExists(context.paths.userManifest)) {
     return loadEnvironment(context, options);
   }
-  const location = manifestLocation(context, scope, options.root);
+  const location = manifestLocation(context, scope);
   return {
     ...location,
     manifest: proposedManifest(
@@ -213,10 +230,8 @@ function mutationEnvironment(context, options, scope) {
   };
 }
 
-async function dependencyMutation(context, args, remove) {
-  const { options, positional } = parseOptions(args);
-  rejectGroupSelection(options, remove ? "uninstall" : "install");
-  const input = onePositional(positional, "Plugin dependency");
+async function dependencyMutation({ context, options, positional }, remove) {
+  const input = positional[0];
   const scope = scopeOption(options);
   const environment = mutationEnvironment(context, options, scope);
   const config = loadConfig(context.paths.config);
@@ -240,50 +255,85 @@ async function dependencyMutation(context, args, remove) {
   }, {
     persistCache: !options.dry_run,
     env: context.env,
+    offline: options.offline === true,
   });
   options.activeGroups = selectDependencyGroups(manifest.value, {
     groups: loadState(environment.statePath).active_groups,
   });
-  const plan = persistThenSync(context, environment, manifest, lock, options);
+  const action = remove ? "remove" : "add";
+  // --no-sync stops at the declaration and lock; Agent directories are untouched
+  // (CFI-010).
+  const plan = options.no_sync
+    ? persistWithoutSync(context, environment, manifest, lock, options)
+    : persistThenSync(context, environment, manifest, lock, options);
+  const links = plan?.actions.length ?? 0;
   context.write(
-    `SUMMARY plugin=${id} action=${remove ? "uninstall" : "install"} ` +
-      `links=${plan.actions.length} dry_run=${options.dry_run === true}`,
+    `SUMMARY plugin=${id} action=${action} ` +
+      `links=${links} dry_run=${options.dry_run === true}`,
   );
-  return { kind: remove ? "uninstall" : "install", plugin: id, plan };
+  return {
+    kind: action,
+    plugin: id,
+    plan,
+    data: {
+      kind: action,
+      plugin: id,
+      scope,
+      links,
+      synced: options.no_sync !== true,
+      dry_run: options.dry_run === true,
+    },
+  };
 }
 
-async function lock(context, args) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail("lock takes no arguments");
-  rejectGroupSelection(options, "lock");
+async function lock({ context, options }) {
   const environment = loadEnvironment(context, options);
   const value = await resolveEnvironmentLock(
     context,
     environment,
-    { persistCache: !options.dry_run, env: context.env },
+    {
+      persistCache: !options.dry_run,
+      env: context.env,
+      offline: options.offline === true,
+    },
   );
   context.write(
     `${options.dry_run ? "DRY-RUN " : ""}LOCK ${environment.lockPath} ` +
       `plugins=${value.dependencies.length}`,
   );
   if (!options.dry_run) writeLock(environment.lockPath, value);
-  return { kind: "lock", lock: value };
+  return {
+    kind: "lock",
+    lock: value,
+    data: {
+      kind: "lock",
+      lock_path: environment.lockPath,
+      plugins: value.dependencies.length,
+      dry_run: options.dry_run === true,
+    },
+  };
 }
 
-async function sync(context, args) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail("sync takes no arguments");
-  const environment = loadEnvironment(context, options, options.frozen === true);
+async function sync({ context, options }) {
+  // --locked requires a lock that already matches the declaration and must never
+  // rewrite it. Cache gaps are still refilled from the locked sources unless
+  // --offline forbids the network (CFI-007, CFI-008).
+  const locked = options.locked === true;
+  const environment = loadEnvironment(context, options, locked);
   options.activeGroups = selectDependencyGroups(
     environment.manifest.value,
     options,
   );
-  const value = options.frozen
+  const value = locked
     ? environment.lock.value
     : await resolveEnvironmentLock(
         context,
         environment,
-        { persistCache: !options.dry_run, env: context.env },
+        {
+          persistCache: !options.dry_run,
+          env: context.env,
+          offline: options.offline === true,
+        },
       );
   const plan = persistLockThenSync(context, environment, value, options);
   context.write(
@@ -291,18 +341,34 @@ async function sync(context, args) {
       `groups=${options.activeGroups.join(",") || "core"} ` +
       `dry_run=${options.dry_run === true}`,
   );
-  return { kind: "sync", plan };
+  return {
+    kind: "sync",
+    plan,
+    data: {
+      kind: "sync",
+      scope: environment.scope,
+      root: environment.root,
+      links: plan.actions.length,
+      removed: plan.stale.length,
+      groups: options.activeGroups,
+      locked,
+      offline: options.offline === true,
+      dry_run: options.dry_run === true,
+    },
+  };
 }
 
-function activate(context, args) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail("activate takes no arguments");
-  rejectGroupSelection(options, "activate");
+function activate({ context, options }) {
   options.scope = "project";
-  const start = resolve(context.cwd, options.root ?? ".");
+  const start = context.cwd;
   if (!findProject(start)) {
-    if (!options.quiet) context.write(`NO ENVIRONMENT from ${start}`);
-    return { kind: "activate", active: false };
+    // Not an error: the shell hook calls this in every directory.
+    context.diagnostic(`NO ENVIRONMENT from ${start}`);
+    return {
+      kind: "activate",
+      active: false,
+      data: { kind: "activate", active: false, root: null },
+    };
   }
   const environment = loadEnvironment(context, options, true);
   const state = loadState(environment.statePath);
@@ -322,13 +388,21 @@ function activate(context, args) {
     environment.lock.value,
     { ...options, dry_run: false },
   );
-  if (!options.quiet) context.write(`ACTIVATED ${environment.root}`);
-  return { kind: "activate", active: true, plan };
+  context.diagnostic(`ACTIVATED ${environment.root}`);
+  return {
+    kind: "activate",
+    active: true,
+    plan,
+    data: {
+      kind: "activate",
+      active: true,
+      root: environment.root,
+      links: plan.actions.length,
+    },
+  };
 }
 
-function trust(context, args, remove) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail(`${remove ? "untrust" : "trust"} takes no arguments`);
+function trust({ context, options }, remove) {
   options.scope = "project";
   const environment = loadEnvironment(context, options, !remove);
   if (remove) {
@@ -343,12 +417,15 @@ function trust(context, args, remove) {
     );
     context.write(`TRUSTED ${environment.root}`);
   }
-  return { kind: remove ? "untrust" : "trust", root: environment.root };
+  const kind = remove ? "untrust" : "trust";
+  return {
+    kind,
+    root: environment.root,
+    data: { kind, root: environment.root },
+  };
 }
 
-function clean(context, args) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail("clean takes no arguments");
+function clean({ context, options }) {
   const environment = loadEnvironment(context, options);
   const results = cleanManaged(
     environment.statePath,
@@ -364,19 +441,30 @@ function clean(context, args) {
         result.destination,
     );
   }
-  return { kind: "clean", results };
+  return {
+    kind: "clean",
+    results,
+    data: {
+      kind: "clean",
+      removed: results.length,
+      entries: results.map((result) => ({
+        operation: result.operation,
+        destination: result.destination,
+      })),
+      dry_run: options.dry_run === true,
+    },
+  };
 }
 
-function status(context, args) {
-  const { options, positional } = parseOptions(args);
-  if (positional.length) fail("status takes no arguments");
+function status({ context, options }) {
   const scope = scopeOption(options);
-  if (scope === "project") {
-    const start = resolve(context.cwd, options.root ?? ".");
-    if (!findProject(start)) {
-      context.write("ENVIRONMENT none");
-      return { kind: "status", found: false };
-    }
+  if (scope === "project" && !findProject(context.cwd)) {
+    context.write("ENVIRONMENT none");
+    return {
+      kind: "status",
+      found: false,
+      data: { kind: "status", found: false, scope },
+    };
   }
   const environment = loadEnvironment(context, options, false);
   const state = loadState(environment.statePath);
@@ -414,12 +502,25 @@ function status(context, args) {
     lock: lockValue,
     trust: trustValue,
     state,
+    data: {
+      kind: "status",
+      found: true,
+      scope,
+      root: environment.root,
+      lock: lockValue ? "valid" : "invalid-or-missing",
+      ...(scope === "project"
+        ? {
+            trusted: trustValue.trusted,
+            trust_reason: trustValue.trusted ? null : trustValue.reason,
+          }
+        : {}),
+      managed: state.managed.length,
+      groups: state.active_groups,
+    },
   };
 }
 
-function agents(context, args) {
-  const { positional } = parseOptions(args);
-  if (positional.length) fail("agents takes no arguments");
+function agents({ context }) {
   context.write("AGENT\tUSER PATH\tPROJECT PATH\tDISPLAY NAME");
   const rows = resolvedAgentRows(context.registry, context);
   for (const row of rows) {
@@ -427,28 +528,48 @@ function agents(context, args) {
       `${row.id}\t${row.userDir ?? "-"}\t${row.projectDir}\t${row.displayName}`,
     );
   }
-  return { kind: "agents", count: rows.length };
+  return {
+    kind: "agents",
+    count: rows.length,
+    data: {
+      kind: "agents",
+      agents: rows.map((row) => ({
+        id: row.id,
+        user_path: row.userDir ?? null,
+        project_path: row.projectDir,
+        display_name: row.displayName,
+      })),
+    },
+  };
 }
 
-function shell(context, args) {
-  const { positional } = parseOptions(args);
-  const shellName = onePositional(positional, "shell name");
+function shell({ context, positional }) {
+  const shellName = positional[0];
   context.write(shellInit(shellName).trimEnd());
   return { kind: "shell-init", shell: shellName };
 }
 
-export function environmentCommand(context, command, args) {
-  if (command === "init") return init(context, args);
-  if (command === "install") return dependencyMutation(context, args, false);
-  if (command === "uninstall") return dependencyMutation(context, args, true);
-  if (command === "lock") return lock(context, args);
-  if (command === "sync") return sync(context, args);
-  if (command === "activate") return activate(context, args);
-  if (command === "trust") return trust(context, args, false);
-  if (command === "untrust") return trust(context, args, true);
-  if (command === "status") return status(context, args);
-  if (command === "clean") return clean(context, args);
-  if (command === "agents") return agents(context, args);
-  if (command === "shell-init") return shell(context, args);
-  return null;
+// Keyed by the contract's `handler` field, so a command declared in the contract
+// without a handler here fails loudly in the dispatch test.
+const HANDLERS = {
+  init,
+  add: (request) => dependencyMutation(request, false),
+  remove: (request) => dependencyMutation(request, true),
+  lock,
+  sync,
+  activate,
+  trust: (request) => trust(request, false),
+  untrust: (request) => trust(request, true),
+  status,
+  clean,
+  agents,
+  "shell-init": shell,
+};
+
+export function environmentCommand(handler, request) {
+  const run = HANDLERS[handler];
+  if (!run) return null;
+  return run(request);
 }
+
+export { HANDLERS as ENVIRONMENT_HANDLERS };

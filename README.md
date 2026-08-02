@@ -73,7 +73,7 @@ skillsenv marketplace remove marketplace-name
 ```sh
 cd my-project
 skillsenv init
-skillsenv install quality-plugin@team-market \
+skillsenv add quality-plugin@team-market \
   --agent claude,codex \
   --skill quality-review
 skillsenv trust
@@ -118,8 +118,8 @@ dependencies:
 
 协作者提交 `.skillsenv`、`.skillsenv.lock` 和项目内本地 Marketplace 内容，即可
 共享同一依赖全集。首次取得项目后，执行一次显式 `skillsenv sync` 建立本机缓存，
-再执行 `skillsenv trust`。之后 `sync --frozen` 和自动 `activate` 只读取共享 lock
-与本机缓存，不重新解析来源或联网。
+再执行 `skillsenv trust`。之后 `sync --locked --offline` 和自动 `activate` 只读取
+共享 lock 与本机缓存，不重新解析来源或联网。
 
 Skillsenv 保证项目声明的 Skill 内容和目标一致，不接管 Agent 自己的用户级、
 管理员级或系统级 Skill。每位协作者可以保留个人 Skill，因此“依赖一致”不等于
@@ -170,18 +170,22 @@ skillsenv sync --all-groups
 ```sh
 skillsenv lock
 skillsenv sync
-skillsenv sync --frozen
+skillsenv sync --locked --offline
 skillsenv clean
-skillsenv uninstall quality-plugin@team-market
+skillsenv remove quality-plugin@team-market
 ```
 
-`sync --frozen` 和 `activate` 只消费现有锁与缓存。`clean` 只删除 Skillsenv 自己
-创建且仍指向记录源的链接；兼容的既有手工链接只复用，不接管所有权。
+`sync --locked --offline` 和 `activate` 只消费现有锁与缓存。`clean` 只删除
+Skillsenv 自己创建且仍指向记录源的链接；兼容的既有手工链接只复用，不接管所有权。
+
+`--locked` 要求锁存在且与声明一致，并且绝不改写锁；`--offline` 禁用全部网络访问；
+`--no-sync` 让 `add` / `remove` 只更新声明与锁，不触碰 Agent 目录。三者可自由组合，
+完整真值表见 [`docs/cli-ux-conventions.md`](docs/cli-ux-conventions.md)。
 
 ## 用户级安装
 
 ```sh
-skillsenv install quality-plugin@team-market \
+skillsenv add quality-plugin@team-market \
   --scope user \
   --agent claude,codex \
   --skill quality-review
@@ -212,7 +216,7 @@ skillsenv shell-init fish | source
 ## 安全操作
 
 ```sh
-skillsenv install plugin@market --agent claude --dry-run
+skillsenv add plugin@market --agent claude --dry-run
 skillsenv sync --dry-run
 skillsenv sync --group test --dry-run
 skillsenv sync --replace
@@ -221,6 +225,25 @@ skillsenv agents
 
 `--dry-run` 完成解析和冲突预检但不写清单、锁、缓存或链接。`--replace` 的备份
 保存在 Skillsenv 用户根目录的 `backups/links/`，不留在 Agent 的扫描目录中。
+
+## 命令行约定
+
+`--help` 在任何层级都只打印帮助并以 `0` 退出，绝不产生副作用。退出码为 `0` 成功、
+`2` 用法错误、`1` 其余失败。结果写 stdout，进度与提示写 stderr，因此
+`--output-format json` 的 stdout 是可直接解析的单个 JSON 文档：
+
+```sh
+skillsenv status --output-format json
+skillsenv --directory /path/to/project status
+skillsenv help add
+```
+
+`--directory` 改变整个运行的工作目录，包括 `init` 的写入位置。`-q/--quiet` 压制
+进度输出但保留错误与弃用提示，`-v/--verbose` 增加 stderr 细节。
+
+兼容别名 `install` / `uninstall` / `version` / `--root` / `--frozen` 仍可用，每次
+使用会向 stderr 打印一次迁移提示。命令与参数的完整决策依据见
+[`docs/cli-ux-conventions.md`](docs/cli-ux-conventions.md)。
 
 ## 开发与发布门禁
 

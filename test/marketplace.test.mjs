@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -195,9 +195,13 @@ test("version command matches the package release", async () => {
   const root = temporaryRoot();
   try {
     const context = testContext(root);
+    // Read from package.json so the two cannot drift apart.
+    const packaged = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ).version;
     const { result, output } = await invoke(context, ["--version"]);
-    assert.equal(result.version, "0.2.0");
-    assert.deepEqual(output, ["0.2.0"]);
+    assert.equal(result.version, packaged);
+    assert.deepEqual(output, [packaged]);
   } finally {
     removeRoot(root);
   }

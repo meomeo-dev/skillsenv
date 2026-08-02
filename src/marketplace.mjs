@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fail } from "./errors.mjs";
 import {
   atomicWrite,
+  assertNetworkAllowed,
   assertRealPathWithin,
   makeTempDir,
   pathExists,
@@ -204,6 +205,7 @@ function cloneMarketplace(source, destination, env) {
 }
 
 async function downloadMarketplaceJson(source, destination) {
+  assertNetworkAllowed("Marketplace JSON download");
   let response;
   try {
     response = await fetch(source.url, { redirect: "follow" });

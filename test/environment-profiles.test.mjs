@@ -316,7 +316,7 @@ test("unknown, conflicting, and duplicate dependency groups fail fast", async ()
     );
     await assert.rejects(
       invoke(context, ["sync", "--group", "test", "--all-groups"]),
-      /cannot be used together/,
+      /--group and --all-groups are mutually exclusive/,
     );
 
     write(
