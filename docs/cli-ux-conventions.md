@@ -44,6 +44,14 @@ Marketplace、Agent、信任和链接的领域语义。
 
 `--dry-run` 与三者正交：执行真实解析和完整预检，但不做任何持久写入。
 
+网络轴对写命令和读命令的默认值相反：`add`、`sync` 等写命令默认允许出网，用
+`--offline` 收紧；`marketplace show`、`info` 这类零写入的查看命令默认离线，用
+`--online`放开。理由是浏览市场不应该因为某个 Plugin 声明了远程来源就隐式克隆。
+契约用 `sideEffects.networkOptIn` 表达这一点，并禁止同时声明 `network: true`。
+
+读命令在离线状态下遇到无法解析的 Plugin 时逐条降级：该 Plugin 附一条原因，其余
+照常输出，命令仍以 `0` 退出。整条命令失败只保留给"目标本身不存在"这类错误。
+
 ## 命令决策
 
 | 命令表面 | 决策 | 理由 |
@@ -54,7 +62,8 @@ Marketplace、Agent、信任和链接的领域语义。
 | `add` / `remove` | 新规范命令 | uv 与 Bun 一致，npm 也把 `add`/`remove` 作为公开别名 |
 | `install` / `uninstall` | 兼容别名 | 保护现有调用；不继承 npm 的职责过载与错拼别名集合 |
 | `lock` / `sync` | 保留并以 uv 为主 | 与锁定产物和实际链接环境一一对应 |
-| `marketplace add/list/use/update/remove` | 领域自定义 | Marketplace 是稳定领域对象，嵌套 CRUD 比泛化 `update` 清晰 |
+| `marketplace add/list/show/use/update/remove` | 领域自定义 | Marketplace 是稳定领域对象，嵌套 CRUD 比泛化 `update` 清晰 |
+| `marketplace show` / `info` | 领域自定义、参考读命令惯例 | `list` 回答"有哪些市场"，`show` 回答"市场提供什么"，`info` 聚焦单个 Plugin；与 `npm view`、`brew info` 的只读职责一致 |
 | `activate` / `trust` / `untrust` | 领域自定义 | 表达自动激活前的缓存与信任安全边界，无主流等价物 |
 | `status` / `clean` / `agents` / `shell-init` | 保留 | 均有现存领域对象；只有一个 Agent 查询动作时不增加浅层 `agent list` 组 |
 | `run` / 泛化 `update` / `ci` | 不新增 | 没有脚本运行时、独立升级策略或新的 CI 状态机 |
@@ -71,6 +80,8 @@ Marketplace、Agent、信任和链接的领域语义。
 | `--frozen` | 兼容期自定义 | 保持“新鲜锁 + 仅缓存”安全语义，等价于 `--locked --offline` |
 | `--output-format <text\|json>` | 对齐 uv 输出形式 | 仅用于有结构化结果或计划的命令，JSON 保持纯净 |
 | `--scope`、`--agent`、`--skill` | 领域自定义 | 分别选择环境、Agent 目标和 Skill 投影 |
+| `--skills` | 领域自定义 | 只在只读列举中把 Plugin 展开到 Skill 名单；与选择投影的 `--skill` 互斥，任一命令都不同时声明两者 |
+| `--online` | 领域自定义 | 只读命令默认离线，显式放开出网才解析远程 Plugin 来源 |
 | `--group`、`--all-groups` | 领域语义、主流词汇 | 与 uv 词汇一致，但值来自 `.skillsenv` 声明 |
 | `--replace` | 领域自定义 | 只允许备份后替换冲突链接，不扩大为通用强制参数 |
 | `-g`/`--global`、`--yes`、`--color`、`--no-progress` | 不新增 | 没有对应对象或行为时不暴露空参数 |
@@ -190,6 +201,39 @@ Marketplace 可在离线下完成解析。
 6. 主流工具是否有同名表面？语义是否一致？不一致时是否记录了理由？
 7. 是否引入了与现有参数重复的同义词？
 8. 契约、帮助、测试矩阵是否同时更新？
+
+### 0.4.0 新增命令与扩展
+
+以下决策以 issue #9「讨论」段的表格为据：
+
+| 问题 | `marketplace show` | `info` | `status` 扩展 |
+| --- | --- | --- | --- |
+| 读哪些状态对象 | config + cache | lock + config + cache | state |
+| 写哪些 | 无 | 无 | 无 |
+| 幂等 | 是 | 是 | 是 |
+| 需要网络 | 默认否，`--online` 放开 | 同左 | 否 |
+| 失败分类 | 用法 `2` / 运行 `1` | 同左 | 运行 `1` |
+| 结构化结果 | 是，JSON 字段稳定 | 是 | 已有，新增 `managed_entries` |
+| 主流同名表面 | npm show / brew info | npm info | npm ls / uv pip list |
+| 新同义词 | 否 | 否 | 否 |
+
+**`--online` 而非 `--offline` 翻转**
+
+写命令（`add`/`sync`）默认出网，用 `--offline` 禁止——这是 uv 语义。读命令零副
+作用，但远程 Plugin 来源（`github`/`git-subdir`/`npm`）需要 git clone 或 npm
+install，这不是零副作用。因此读命令翻转极性：默认守住，显式 `--online` 放开。
+uv 自身的 `pip list` / `pip show` 不联网（它只读本地 `site-packages`），但
+`pip index versions` 联网且不接受 `--offline`——因为它的唯一数据源是远程的。
+skillsenv 的数据源是*可能*本地*也可能*远程的，所以需要一个中间策略：能回答就回答
+（本地源），回答不了就告诉你为什么而不是失败或偷偷出网。`--online` 让那些远程源
+也可回答。
+
+**`--skills` 与 `--skill` 的关系**
+
+`--skill <name[,name...]>`（`add`/`remove` 上的投影过滤）与 `--skills`
+（`marketplace show` 上的展开布尔）拼写相近但语义正交。契约用显式 `field` 区分
+（`skills` vs `expand_skills`），且任一命令都不同时声明两者，类型二义不可能发生。
+若用户误用 `--skill` 在 `show` 上（或反过来），退出 `2` 并指向正确帮助。
 
 ## 回归清单
 

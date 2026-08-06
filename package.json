@@ -1,6 +1,6 @@
 {
   "name": "skillsenv",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "声明式管理多市场、多 Agent 和目录级 Skill 可见性",
   "type": "module",
   "bin": {
