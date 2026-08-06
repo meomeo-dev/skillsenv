@@ -1,20 +1,16 @@
+import { commandMayUseNetwork } from "./cli-contract.mjs";
 import { renderHelp } from "./cli-help.mjs";
 import { parseCli } from "./cli-parser.mjs";
 import { createContext } from "./command-context.mjs";
 import { environmentCommand } from "./environment-commands.mjs";
 import { failUsage } from "./errors.mjs";
 import { setOfflineMode } from "./io.mjs";
-import { marketplaceCommand } from "./marketplace-commands.mjs";
+import {
+  marketplaceCommand,
+  MARKETPLACE_HANDLERS,
+} from "./marketplace-commands.mjs";
 
-const VERSION = "0.3.0";
-
-const MARKETPLACE_HANDLERS = new Set([
-  "marketplace-add",
-  "marketplace-list",
-  "marketplace-use",
-  "marketplace-update",
-  "marketplace-remove",
-]);
+const VERSION = "0.4.0";
 
 function renderResult(context, result) {
   if (!context.json) return result;
@@ -28,8 +24,14 @@ function renderResult(context, result) {
 export async function runCli(argv, overrides = {}) {
   const intent = parseCli(argv);
   const context = createContext(overrides, intent.options);
-  // Set once per run; the egress guard in io.mjs reads it.
-  setOfflineMode(intent.options.offline === true);
+  // Set once per run; the egress guard in io.mjs reads it. A command whose
+  // contract declares no network access is held offline even without --offline,
+  // so `network: false` is enforced instead of merely documented.
+  setOfflineMode(
+    intent.options.offline === true ||
+      (intent.kind === "command" &&
+        !commandMayUseNetwork(intent.command, intent.options)),
+  );
   // Migration hints go to stderr so they never contaminate JSON on stdout.
   for (const hint of intent.deprecations) context.warn(`WARNING: ${hint}`);
 
@@ -48,7 +50,9 @@ export async function runCli(argv, overrides = {}) {
 
   const { command, options, positional } = intent;
   const request = { context, options, positional, path: intent.path };
-  if (MARKETPLACE_HANDLERS.has(command.handler)) {
+  // Membership comes from the handler map itself, so there is no second list of
+  // command names to drift out of sync with the contract.
+  if (Object.hasOwn(MARKETPLACE_HANDLERS, command.handler)) {
     return renderResult(context, await marketplaceCommand(command.handler, request));
   }
   const result = await environmentCommand(command.handler, request);

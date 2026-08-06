@@ -456,6 +456,28 @@ function clean({ context, options }) {
   };
 }
 
+// The state records what is linked but not which version produced it, so the
+// version is joined in from the lock. A missing or stale lock leaves it null
+// rather than failing: status is the command you run to diagnose that.
+function managedEntries(state, lockValue) {
+  const versions = new Map(
+    (lockValue?.value.dependencies ?? []).map((dependency) => [
+      dependency.plugin,
+      dependency.version ?? null,
+    ]),
+  );
+  return [...state.managed]
+    .map((record) => ({
+      plugin: record.plugin,
+      skill: record.skill,
+      agents: [...record.agents],
+      version: versions.get(record.plugin) ?? null,
+      destination: record.destination,
+    }))
+    .sort((left, right) =>
+      left.plugin.localeCompare(right.plugin) || left.skill.localeCompare(right.skill));
+}
+
 function status({ context, options }) {
   const scope = scopeOption(options);
   if (scope === "project" && !findProject(context.cwd)) {
@@ -493,8 +515,18 @@ function status({ context, options }) {
       `TRUST ${trustValue.trusted ? "trusted" : `untrusted: ${trustValue.reason}`}`,
     );
   }
+  const entries = managedEntries(state, lockValue);
   context.write(`MANAGED ${state.managed.length}`);
   context.write(`GROUPS ${state.active_groups.join(",") || "core"}`);
+  if (entries.length) {
+    context.write("PLUGIN\tSKILL\tAGENTS\tVERSION");
+    for (const entry of entries) {
+      context.write(
+        `${entry.plugin}\t${entry.skill}\t${entry.agents.join(",")}\t` +
+          `${entry.version ?? "-"}`,
+      );
+    }
+  }
   return {
     kind: "status",
     found: true,
@@ -502,6 +534,7 @@ function status({ context, options }) {
     lock: lockValue,
     trust: trustValue,
     state,
+    entries,
     data: {
       kind: "status",
       found: true,
@@ -515,6 +548,7 @@ function status({ context, options }) {
           }
         : {}),
       managed: state.managed.length,
+      managed_entries: entries,
       groups: state.active_groups,
     },
   };

@@ -76,6 +76,14 @@ export const OPTIONS = {
     list: true,
     describe: "Skill filter for the dependency",
   },
+  // `field` is explicit because `--skill` already owns the derived `skills`
+  // field; without it the two would collide as an array and a boolean.
+  expandSkills: {
+    name: "--skills",
+    kind: "boolean",
+    field: "expand_skills",
+    describe: "Expand each Plugin to its Skill names",
+  },
   group: {
     name: "--group",
     kind: "value",
@@ -108,6 +116,14 @@ export const OPTIONS = {
     name: "--offline",
     kind: "boolean",
     describe: "Disable network access",
+  },
+  // The mirror image of --offline: a read-only command stays fully offline
+  // unless the caller opts in, so listing a Marketplace never clones by
+  // surprise.
+  online: {
+    name: "--online",
+    kind: "boolean",
+    describe: "Allow network access to resolve remote Plugin sources",
   },
   noSync: {
     name: "--no-sync",
@@ -268,6 +284,15 @@ export const COMMANDS = [
     sideEffects: { writes: [], network: false },
   },
   {
+    name: "info",
+    summary: "Show one Plugin's version, source, Skills and description",
+    positional: [{ name: "plugin[@marketplace]", required: true }],
+    options: [OPTIONS.scope, OPTIONS.online],
+    outputFormats: ["text", "json"],
+    handler: "info",
+    sideEffects: { writes: [], network: false, networkOptIn: "--online" },
+  },
+  {
     name: "shell-init",
     summary: "Print the optional auto-activation hook",
     positional: [{ name: "bash|zsh|fish", required: true }],
@@ -296,6 +321,15 @@ export const COMMANDS = [
         outputFormats: ["text", "json"],
         handler: "marketplace-list",
         sideEffects: { writes: [], network: false },
+      },
+      {
+        name: "show",
+        summary: "List the Plugins a registered Marketplace provides",
+        positional: [{ name: "name", required: true }],
+        options: [OPTIONS.expandSkills, OPTIONS.online],
+        outputFormats: ["text", "json"],
+        handler: "marketplace-show",
+        sideEffects: { writes: [], network: false, networkOptIn: "--online" },
       },
       {
         name: "use",
@@ -349,6 +383,18 @@ export function commandOptions(command) {
     ...(command.outputFormats ? [OPTIONS.outputFormat] : []),
     ...(command.options ?? []),
   ];
+}
+
+// The declared side effects decide whether the egress guard is armed, so
+// `network: false` is enforced rather than merely documented. A command with
+// `networkOptIn` is offline until the caller names that option explicitly.
+export function commandMayUseNetwork(command, options = {}) {
+  if (command.sideEffects?.network === true) return true;
+  const optIn = command.sideEffects?.networkOptIn;
+  if (!optIn) return false;
+  const declared = commandOptions(command).find((option) => option.name === optIn);
+  const field = declared?.field ?? optIn.slice(2).replaceAll("-", "_");
+  return options[field] === true;
 }
 
 export function findCommand(name, commands = COMMANDS) {
@@ -452,6 +498,21 @@ function assertCommands(commands, names, path, optionTokens) {
     if (!command.sideEffects || !Array.isArray(command.sideEffects.writes) ||
         typeof command.sideEffects.network !== "boolean") {
       fail(`Contract command ${command.name} has no side-effect record`);
+    }
+    const optIn = command.sideEffects.networkOptIn;
+    if (optIn !== undefined) {
+      if (command.sideEffects.network === true) {
+        fail(
+          `Contract command ${command.name} declares networkOptIn but already ` +
+            "allows network access",
+        );
+      }
+      if (!commandOptions(command).some((option) => option.name === optIn)) {
+        fail(
+          `Contract command ${command.name} opts into network via ${optIn}, ` +
+            "which it does not declare",
+        );
+      }
     }
   }
 }

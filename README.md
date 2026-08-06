@@ -56,6 +56,7 @@ skillsenv marketplace add https://gitlab.example.com/team/marketplace.git#v1
 skillsenv marketplace add https://example.com/marketplace.json
 
 skillsenv marketplace list
+skillsenv marketplace show marketplace-name
 skillsenv marketplace use marketplace-name
 skillsenv marketplace update marketplace-name
 skillsenv marketplace remove marketplace-name
@@ -67,6 +68,41 @@ skillsenv marketplace remove marketplace-name
 `${SKILLSENV_HOME:-$HOME/.skillsenv}/config.yaml`，适合个人跨项目使用。项目需要
 协作者共享的来源应声明在项目根目录 `.skillsenv` 中；同名项目声明优先于用户
 登记。
+
+## 安装前查看
+
+`marketplace list` 只回答"登记了哪些市场"，`marketplace show` 进一步列出某个市场
+提供的 Plugin，`info` 聚焦单个 Plugin：
+
+```sh
+skillsenv marketplace show team-market
+skillsenv marketplace show team-market --skills
+skillsenv info quality-plugin@team-market
+```
+
+两者都是只读命令，不写入清单、lock 或托管状态，因此可以在 `init` 之前使用。
+
+版本列取自 Plugin 自身的 `plugin.json`，缺失时回退到市场条目声明的版本，与
+`add` 写入 lock 的结果一致。
+
+默认离线。来源为本地相对目录的 Plugin 可直接读取；来源为 `github`、`git-subdir`、
+`npm` 等远程形式时需要显式 `--online` 才会解析，否则该行降级为一条原因说明，
+其余 Plugin 照常列出：
+
+```text
+PLUGIN                  VERSION  DESCRIPTION
+quality-plugin          1.2.3    Quality gates
+  SKILL quality-review
+remote-plugin           2.0.0    Remote helpers
+  SKILLS unavailable: github Plugin source needs --online to resolve Skills
+```
+
+`info` 对已安装的 Plugin 直接读取 lock，无需访问市场；未安装时才回退到市场清单。
+因此项目 `.skillsenv` 中声明、未在用户级登记的 Marketplace 同样可以查询。
+
+`--output-format json` 下 stdout 只有一份文档，降级原因通过 `skills_error` 字段
+表达，`skills` 为 `null`；未使用 `--skills` 时不输出 `skills` 键，以免与"解析出
+零个 Skill"混淆。
 
 ## 项目环境
 

@@ -36,7 +36,7 @@ function isOptionToken(token) {
 }
 
 function booleanField(option) {
-  return option.name.slice(2).replaceAll("-", "_");
+  return option.field ?? option.name.slice(2).replaceAll("-", "_");
 }
 
 // Deprecated forms are recorded, not printed. Hints go to stderr later so JSON
